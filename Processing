@@ -1,0 +1,417 @@
+import processing.serial.*;
+import de.voidplus.leapmotion.*;
+import ddf.minim.*;
+import java.util.*;
+
+float[] move_position = new float[3];
+float old_hand_grab=0;
+int lightStrength;
+float rotateSpeed=0;
+final int level = 5;
+float a = 0.1;
+float t=0;
+final float r = 300;
+float fre, amp, rotateangle;
+PVector start[];
+Polygon poly;
+int entertimes=0;
+Minim minim;
+AudioPlayer player;
+VectorPool pool = new VectorPool();
+
+int maxsize = 0;
+int R, G, B;
+LeapMotion leap;
+
+int humit, temp, light;
+int ohumit, otemp, olight;
+int[] data = new int[7];
+int serialCount = 0;                 // A count of how many bytes we receive
+boolean readflag = false;        // Whether we've heard from the microcontroller
+boolean grab_flag=false;
+boolean motor_state=false;
+boolean heatstate=false;
+Serial port;
+
+int val;
+float[] nowVal = new float[439];
+boolean flag=false;
+
+int playerFlag;
+
+void setup() {
+  for (int i=0; i<3; i++)
+    move_position[i]=0;
+  leap = new LeapMotion(this).withGestures();
+  minim = new Minim(this);
+  //player = minim.loadFile("intro.mp3");
+  //player.play();
+
+  size(displayWidth,displayHeight,P2D);
+  frameRate(30);
+  smooth();
+  strokeWeight(1);
+  stroke(0, 10);
+
+  noFill();
+  background(0, 0, 0, 255);
+  start = new PVector[5];
+  for (int i=0; i<5; i++) {
+    start[i] = pool.get(r*cos(2*PI/5*i-PI/2), r*sin(2*PI*i/5-PI/2));
+  }
+
+  port = new Serial(this, "COM3", 115200);
+
+  if (humit > 700) {
+    player = minim.loadFile("1.mp3");
+    player.play();
+    playerFlag = 1;
+  } else {
+    player = minim.loadFile("2.mp3");
+    player.play();
+    playerFlag = 2;
+  }
+}
+
+void draw() {
+  frame.setTitle(String.format("Moss Hacker : %8.6f", frameRate));
+  //background(0, 0, 0,10);
+  fill(0, 20);
+
+  noStroke();
+  rect(0, 0, width, height);
+  stroke(0, 5);
+  noFill();
+  translate(width/2, height/2);
+  for (int i=0; i<5; i++) {
+    start[i] = pool.get(r*cos(2*PI/5*i-PI/2), r*sin(2*PI*i/5-PI/2));
+  }
+
+  for (int i=0; i<5; i++) {
+    start[i].x+=move_position[0]/20;
+    start[i].y+=move_position[1]/20;
+  }
+
+  pushMatrix();
+  rotate(t/4);//rotateangle
+  drawShape(start, level);
+  popMatrix();
+  amp = ((float)humit/800-1)*0.8 + 1;
+  fre= -((float)humit/800)*0.3+0.3;
+  a = amp*sin(t)*0.4+0.2;
+
+  rotateSpeed = 0.026250005+(light-550)/100*0.01;
+  t+=rotateSpeed;
+
+  flag=false;
+
+  //leapmotion
+  for (Hand hand : leap.getHands ()) {
+    int     hand_id          = hand.getId();
+    PVector hand_position    = hand.getPosition();
+    PVector hand_stabilized  = hand.getStabilizedPosition();
+    PVector hand_direction   = hand.getDirection();
+    PVector hand_dynamics    = hand.getDynamics();
+    float   hand_roll        = hand.getRoll();
+    float   hand_pitch       = hand.getPitch();
+    float   hand_yaw         = hand.getYaw();
+    boolean hand_is_left     = hand.isLeft();
+    boolean hand_is_right    = hand.isRight();
+    float   hand_grab        = hand.getGrabStrength();
+    float   hand_pinch       = hand.getPinchStrength();
+    float   hand_time        = hand.getTimeVisible();
+    PVector sphere_position  = hand.getSpherePosition();
+    float   sphere_radius    = hand.getSphereRadius();
+    if (hand_is_right) {
+      // println(hand_grab);
+      if (hand_grab==1) {//((hand_grab==1)&(old_hand_grab!=1)) {
+        heatstate=true;
+      }
+      if (hand_grab!=1) {
+        heatstate=false;
+      }
+      //old_hand_grab=hand_grab;
+    }
+    if (hand_is_left) {//[ 684.85333, 767.84924, 50.20854 ]
+      if (hand_grab!=1) {
+        move_position[0]=hand.getStabilizedPosition().x-684.85333;
+        move_position[1]=(hand.getStabilizedPosition().y-367.84924);
+        move_position[2]=hand.getStabilizedPosition().z-50.20854;
+        //println(move_position[0] + " " + move_position[1] + " " + move_position[2]);
+      }
+    }
+  }
+  //port
+  int inByte = port.read();
+  // if this is the first byte received, and it's an A,
+  // clear the serial buffer and note that you've
+  // had first contact from the microcontroller. 
+  // Otherwise, add the incoming byte to the array:
+  if (inByte==0xAA) {
+    readflag= true;
+  }
+  // Add the latest byte from the serial port to array:
+  if (readflag) { 
+    data[serialCount] = inByte;
+    serialCount++;
+  }
+
+  // If we have 7 bytes:
+  if (serialCount ==7 ) {
+    humit=data[1]*256+data[2];
+    temp=data[3]*256+data[4];
+    light=data[5]*256+data[6];
+    /*
+    //if (humit<300) {
+     if (humit<0) {
+     if (!motor_state) {
+     println("pomp up");
+     sendCommand(2, 1, 0);
+     motor_state=true;
+     }
+     } else {
+     if (motor_state) {
+     sendCommand(2, 2, 0);
+     motor_state=false;
+     }
+     }*/
+    musicchoice(humit, temp, light);
+    // Send a capital A to request new sensor readings:
+    // Reset serialCount:
+    serialCount=0;
+    readflag=false;
+    if (heatstate) {
+
+      sendCommand(3, 1, 0);
+    } else {
+      sendCommand(3, 2, 0);
+    }
+    port.clear();
+  }
+  textSize(10);
+  fill(230);
+  text("Moisture: " + humit, -width/2+10, -height/2+15);
+  text("Tempurature: " + temp, -width/2+10, -height/2+30);
+  text("Light: " + light, -width/2+10, -height/2+45);
+  text("Team 13 @ 2014/12/14", -width/2+10, -height/2+60);
+}
+void sendCommand(int dev, int para1, int para2) {
+  //dev=1:LED
+  //dev=2:pomb
+  //dev=3:Light
+  port.write(0x55);
+  port.write(dev);
+  port.write(para1);
+  port.write(para2);
+}
+void drawShape(PVector p[], int n) {
+  if (n <= 0) return;
+  if (poly == null) {
+    println("Create poly");
+    poly = new Polygon(p);
+  } else {
+    poly.set(p);
+  }
+  // Polygon poly = new Polygon(p);
+  if (temp>550)
+    strokeWeight(1+(temp - 550)/10+random(2));
+  stroke(200+random(40), 10);
+  // stroke()
+  poly.draw();
+
+  PVector[] newp = new PVector[5];
+  for (int i=0; i<5; i++) {
+    float x = (p[(i+2)%5].x + p[(i+3)%5].x)/2;
+    float y = (p[(i+2)%5].y + p[(i+3)%5].y)/2;
+    newp[i] = pool.get();
+    newp[i].x = a*p[i].x + (1-a)*x;
+    newp[i].y = a*p[i].y + (1-a)*y;
+    //point(newp[i].x, newp[i].y);
+  }
+
+  PVector tmp[];
+  for (int i=0; i<5; i++) {
+    tmp = new PVector[5];
+    tmp[0] = pool.get(newp[i]);
+    tmp[1] = pool.get(newp[(i+1)%5]);
+    tmp[2] = center(p[(i+3)%5], p[(i+4)%5]);
+    tmp[3] = pool.get(p[(i+3)%5]);
+    tmp[4] = center(p[(i+3)%5], p[(i+2)%5]);
+
+    drawShape(tmp, n-1);
+    // tmp2 and tmp4 are allocated here, so it`s recycled here two
+    // println(pool.size());
+
+    for (int j = 0; j<5; j++) {
+      pool.recycle(tmp[j]);
+    }
+  }
+  drawShape(newp, n-1);
+  for (int i=0; i<5; i++) {
+    pool.recycle(newp[i]);
+  }
+}
+PVector center(PVector a, PVector b) {
+  return pool.get((a.x+b.x)/2, (a.y+b.y)/2);
+}
+void musicchoice(int humit, int temp, int light) {
+  if (humit > 650) {
+    if (playerFlag == 2) {
+      player.close();
+      player = minim.loadFile("1.mp3");
+      player.play();
+      playerFlag = 1;
+    }
+  } else {
+    if (playerFlag == 1) {
+      player.close();
+      player = minim.loadFile("2.mp3");
+      player.play();
+      playerFlag = 2;
+    }
+  }
+}
+
+void leapOnCircleGesture(CircleGesture g, int state) {
+  int     id               = g.getId();
+  Finger  finger           = g.getFinger();
+  PVector position_center  = g.getCenter();
+  float   radius           = g.getRadius();
+  float   progress         = g.getProgress();
+  long    duration         = g.getDuration();
+  float   duration_seconds = g.getDurationInSeconds();
+  int     direction        = g.getDirection();
+
+  switch(state) {
+  case 1:  // Start
+    if (direction==1) {
+      sendCommand(1, 2, 0);
+    //  println("led On");
+    } else {
+      sendCommand(1, 1, 10);
+   //   println("led off");
+    }
+
+    break;
+  case 2: // Update
+    break;
+  case 3: // Stop
+   // println("CircleGesture: "+id);
+    break;
+  }
+
+  switch(direction) {
+  case 0: // Anticlockwise/Left gesture
+    break;
+  case 1: // Clockwise/Right gesture
+    break;
+  }
+}
+
+void leapOnSwipeGesture(SwipeGesture g, int state) {
+  int     id               = g.getId();
+  Finger  finger           = g.getFinger();
+  PVector position         = g.getPosition();
+  PVector position_start   = g.getStartPosition();
+  PVector direction        = g.getDirection();
+  float   speed            = g.getSpeed();
+  long    duration         = g.getDuration();
+  float   duration_seconds = g.getDurationInSeconds();
+
+  switch(state) {
+  case 1:  // Start
+    break;
+  case 2: // Update
+    break;
+  case 3: // Sto
+   // println("SwipeGesture: "+id );
+    break;
+  }
+}
+
+void leapOnScreenTapGesture(ScreenTapGesture g) {
+  int     id               = g.getId();
+  Finger  finger           = g.getFinger();
+  PVector position         = g.getPosition();
+  PVector direction        = g.getDirection();
+  long    duration         = g.getDuration();
+  float   duration_seconds = g.getDurationInSeconds();
+  //sendCommand(2, 1, 0);
+  //println("ScreenTapGesture: "+id);
+}
+
+void leapOnKeyTapGesture(KeyTapGesture g) {
+  int     id               = g.getId();
+  Finger  finger           = g.getFinger();
+  PVector position         = g.getPosition();
+  PVector direction        = g.getDirection();
+  long    duration         = g.getDuration();
+  float   duration_seconds = g.getDurationInSeconds();
+
+  //println("KeyTapGesture: "+id);
+  if (!motor_state) {
+    sendCommand(2, 1, 0);
+  }
+}
+
+class Polygon{
+  PVector p[];
+  float alpha;
+  
+  Polygon(PVector _p[]){
+    p = _p;
+  }
+  void set(PVector _p[]){
+    p = _p;
+  }
+  void draw(){
+    beginShape();
+    for(int i=0; i<5; i++){
+      vertex(p[i].x, p[i].y);
+    }
+    endShape(CLOSE);
+    
+  }
+}
+
+class VectorPool{
+    Queue<PVector> queue;
+    VectorPool(){
+      queue = new LinkedList<PVector>();
+    }
+    PVector get(float x, float y){
+      if(queue.size() == 0){
+        return new PVector(x, y);
+      }else{
+        PVector t = queue.poll();
+        t.set(x,y);
+        return t;
+      }
+    }
+    PVector get(){
+      if(queue.size() == 0){
+        
+        return new PVector(0, 0);
+      }else{
+        return queue.poll();
+      }
+    }
+    PVector get(PVector p){
+      if(queue.size()== 0){
+        
+        return new PVector(p.x, p.y);
+      }else{
+        PVector t = queue.poll();
+        t.set(p.x, p.y);
+        return t;
+      }
+    }
+    int recycle(PVector p){
+      queue.offer(p);
+      maxsize = max(maxsize, queue.size());
+      return queue.size();
+    }
+    int size(){
+      return queue.size();
+    }
+}
