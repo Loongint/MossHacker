@@ -1,0 +1,86 @@
+//Mosshacker V1.0
+int16_t humit,temp,light;
+int lightledpin1 = 4;
+int lightledpin2= 5;
+int lightledpin3= 6;
+int pomppin=7;
+int heatpin = 8;
+int inByte = 0;         // incoming serial byte
+void setup()
+{
+  Serial.begin(115200);
+  pinMode(lightledpin1, OUTPUT);
+  pinMode(lightledpin2, OUTPUT);
+  pinMode(lightledpin3, OUTPUT);
+  pinMode(pomppin, OUTPUT);
+  pinMode(heatpin, OUTPUT);
+          analogWrite(lightledpin1,255);
+        analogWrite(lightledpin2,255);
+        analogWrite(lightledpin3,255);
+}
+void loop()
+{
+
+  humit=analogRead(0);
+  delay(10);
+  light=analogRead(2);
+  delay(10);
+  temp=analogRead(1);
+  //Serial.println(light);
+  delay(10);
+  Serial.write(0xAA);
+  serwrite(humit);
+  serwrite(temp);
+  serwrite(light);
+
+  if (Serial.read()==0x55)
+  {
+    delay(10);
+    byte dev = Serial.read();
+    byte para1 = Serial.read();
+    byte para2 = Serial.read();
+    switch(dev){
+    case 1:  //LED
+      if(para1==1){
+        analogWrite(lightledpin1,para2);
+        analogWrite(lightledpin2,para2);
+        analogWrite(lightledpin3,para2);
+      }
+      if(para1==2){
+        analogWrite(lightledpin1,255);
+        analogWrite(lightledpin2,255);
+        analogWrite(lightledpin3,255);
+      }
+      break;
+    case 2:  //pomb
+      if(para1==1){
+        digitalWrite(pomppin,HIGH);
+        delay(2000);
+        digitalWrite(pomppin,LOW);
+        Serial.flush();
+        para1=0;
+      }
+      if(para1==2)
+        digitalWrite(pomppin,LOW);
+      break;
+    case 3:  //light
+      if(para1==1){
+        digitalWrite(heatpin,HIGH);
+        para1=0;
+        Serial.flush();
+      }
+      if(para1==2){
+        digitalWrite(heatpin,LOW);
+        para1=0;
+      }
+      break;
+    }
+  }
+  //digitalWrite(ledPin,ledval);
+  delay(400);   
+}
+void serwrite(int16_t big)
+{
+  Serial.write(big>>8);
+  Serial.write(big&0x00FF);
+}
